@@ -1,0 +1,139 @@
+---
+- name: Aufsetzen eines Semaphore Servers
+  hosts: semaphore
+  become: yes
+  tasks:
+    - name: Anpassung des Hostnames
+      ansible.builtin.hostname:
+        name: "srv-semaphore"
+
+    - name: Anpassung der /etc/hosts Datei
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1\s'
+        line: '127.0.1.1    srv-semaphore'
+        state: present
+
+    - name: Aktualisierung des APT Caches
+      ansible.builtin.apt:
+        update_cache: yes
+
+    - name: Installation des Sudo Pakets
+      ansible.builtin.apt:
+        name: sudo
+        state: present
+
+    - name: Installation des Python3-mysqldb Pakets
+      ansible.builtin.apt:
+        name: python3-mysqldb
+        state: present
+
+    - name: Installation des pexpect Pakets
+      ansible.builtin.apt:
+        name: python3-pexpect
+
+    - name: Erstellung des Semaphore Systemusers
+      ansible.builtin.user:
+        name: semaphore
+        system: True
+        create_home: no
+
+    - name: Installation des MariaDB Servers
+      ansible.builtin.apt:
+        name: mariadb-server
+        state: present
+
+    - name: Starten und Aktivieren des MariaDB Service
+      ansible.builtin.service:
+        name: mariadb
+        state: started
+        enabled: yes
+
+    - name: Grundkonfiguration von MariaDB
+      ansible.builtin.expect:
+        command: mysql_secure_installation
+        responses:
+          'Enter current password for root': '<INSERT_YOUR_OWN_INFO_HERE>'
+          'Set root password': 'n'
+          'Remove anonymous users': 'y'
+          'Disallow root login remotely': 'n'
+          'Remove test database': 'y'
+          'Reload privlege tables now': 'y'
+        timeout: 1
+      register: secure_mariadb
+      failed_when: "'... Failed!' in secure_mariadb.stdout_lines"
+
+    - name: Erstellen der Semaphore Datenbank
+      command: mysql -u root -e "CREATE DATABASE semaphore_db;"
+
+    - name: Erstellen des Semaphore Datenbankusers mit vollen Rechten auf der Semaphore Datenbank
+      command: mysql -u root -e "CREATE USER 'semaphore_dbuser'@'localhost' IDENTIFIED BY '<INSERT_YOUR_OWN_INFO_HERE>'; GRANT ALL PRIVILEGES ON semaphore_db.* TO 'semaphore_dbuser'@'localhost'; FLUSH PRIVILEGES;"
+
+    - name: Herunterladen des getesteten Semaphore Pakets von Github
+      ansible.builtin.get_url:
+        url: https://github.com/semaphoreui/semaphore/releases/download/v2.10.11/semaphore_2.10.11_linux_amd64.deb
+        dest: /tmp/semaphore.deb
+
+    - name: Installation des heruntergeladenen Semaphore Pakets
+      ansible.builtin.apt:
+        deb: /tmp/semaphore.deb
+        state: present
+
+    - name: Erstellen des Semaphore Konfigurationsordners
+      ansible.builtin.file:
+        path: /etc/semaphore
+        state: directory
+
+    - name: Kopieren der vorgefertigen config.json Datei
+      ansible.builtin.copy:
+        src: /opt/scripts/templates/config.json
+        dest: /etc/semaphore/config.json
+        owner: semaphore
+        group: semaphore
+
+    - name: Kopieren der vorgefertigten semaphore.service Datei
+      ansible.builtin.copy:
+        src: /opt/scripts/templates/semaphore.service
+        dest: /etc/systemd/system/semaphore.service
+        owner: root
+        group: root
+
+    - name: Starten und Aktivieren des Semaphore Service
+      ansible.builtin.service:
+        name: semaphore
+        state: started
+        enabled: yes
+
+    - name: 1 Minute Wartezeit für Abschluss des Semaphore Erststarts
+      ansible.builtin.pause:
+        minutes: 1
+
+    - name: Erstellung des Semaphore Admin Users
+      command: semaphore user add --admin --login admin --name admin --email admin@administrator.internal --password "<INSERT_YOUR_OWN_INFO_HERE>" --config /etc/semaphore/config.json
+
+    - name: Installation des Ansible Pakets
+      ansible.builtin.apt:
+        name: ansible
+        state: present
+
+    - name: Installation des GPG Pakets
+      ansible.builtin.apt:
+        name: gpg
+        state: present
+
+    - name: Herunterladen des GPG Schlüssels
+      ansible.builtin.shell: |
+        wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+      args:
+        executable: /bin/bash
+
+    - name: Hinzufügen des HashiCorp Repositories
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com bookworm main"
+        filename: "hashicorp.list"
+
+    - name: Aktualisieren des APT Caches und Installation des Terraform Pakets
+      ansible.builtin.apt:
+        update_cache: yes
+        name: terraform
+        state: present

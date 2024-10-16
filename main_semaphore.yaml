@@ -1,0 +1,16 @@
+---
+- name: Grundsetup Semaphore
+  import_playbook: semaphore_install.yaml
+
+- name: Konfiguration Semaphore Projekt
+  import_playbook: semaphore_api.yaml
+
+- name: UserInformationen
+  hosts: semaphore
+  tasks:
+    - name: IP
+      debug:
+        msg: "Semaphore verfügbar @{{ ansible_host }} on Port 3000"
+    - name: Login
+      debug:
+        msg: "User=admin // Passwort=<INSERT_YOUR_OWN_INFO_HERE>"

@@ -1,0 +1,74 @@
+﻿---
+- name: Durchfuehrung der API Calls zur Erstellung eines Projekts
+  hosts: semaphore
+  become: yes
+  tasks:
+    - name: Installation von Curl Paket wenn nicht vorhanden
+      apt:
+        name: curl
+        state: present
+
+    - name: Einloggen
+      command: curl -v -c /tmp/semaphore-cookie -XPOST -H 'Content-Type:application/json' -H 'Accept:application/json' -d '{"auth":"admin", "password":"<INSERT_YOUR_OWN_INFO_HERE>"}' http://localhost:3000/api/auth/login
+
+    - name: Generieren eines Token für API Access
+      command: curl -v -b /tmp/semaphore-cookie -XPOST -H 'Content-Type:application/json' -H 'Accept:application/json' http://localhost:3000/api/user/tokens
+
+    - name: Einlesen des API Tokens
+      command: curl -v -b /tmp/semaphore-cookie -H 'Content-Type:application/json' -H 'Accept:application/json' http://localhost:3000/api/user/tokens
+      register: test_var
+
+    - debug:
+        msg: "{{ test_var.stdout }}"
+
+    - name: Verarbeiten des JSON und ID Wert auslesen
+      set_fact:
+        extracted_token: "{{ test_var.stdout | from_json | json_query('[0].id') }}"
+
+    - name: Token ID ausgeben
+      debug:
+        msg: "{{ extracted_token }}"
+
+    - name: Erstellen des Projekts
+      uri:
+        url: "http://localhost:3000/api/projects"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+          Authorization: "Bearer {{ extracted_token }}"
+        body:
+          name: "IHK Projekt BB"
+          description: "Disasterrecovery bei Hypervisor-Ausfall"
+        body_format: json
+        return_content: yes
+        status_code:
+          - 201
+          - 200
+          - 208
+      register: test_var2
+
+    - name: Output
+      debug:
+        msg: "{{test_var2.json.id}}"
+
+    - name: Github Repository zu Projekt hinzufügen
+      uri:
+        url: "http://localhost:3000/api/project/1/repositories"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+          Authorization: "Bearer {{ extracted_token }}"
+        body:
+          name: "IHK Projekt Winter 2024"
+          project_id: 1
+          git_url: "https://github.com/shrink-fisi/DRprojekt.git"
+          git_branch: "main"
+          ssh_key_id: 1
+        body_format: json
+        return_content: yes
+        status_code:
+          - 201
+          - 204
+          - 200
+          - 208
+      register: test_var3

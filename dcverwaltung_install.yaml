@@ -1,0 +1,91 @@
+---
+- name: Einrichten des DCs für die Ausfalldomäne des Verwaltungsbereichs
+  hosts: verwaltungdc
+  gather_facts: false
+  tasks:
+    - name: Firewall disablen um spaetere Probleme zu vermeiden
+      win_firewall:
+        state: disabled
+        profiles:
+          - Domain
+          - Private
+          - Public
+
+    - name: Anpassung des Hostnamens
+      community.windows.win_hostname:
+        name: "verwaltung-dc"
+      register: temp1
+
+    - name: Neustart vor DC Installation
+      community.windows.win_reboot:
+        pre_reboot_delay: 5
+        post_reboot_delay: 10
+
+    - name: DC Rolle installieren und konfigurieren
+      community.windows.win_feature:
+        name: AD-Domain-Services
+        include_management_tools: yes
+        include_sub_features: yes
+        state: present
+
+    - name: Setze Loopback als DNS Server
+      community.windows.win_dns_client:
+        adapter_names: '*'
+        dns_servers:
+          - 127.0.0.1
+          - <INSERT_YOUR_OWN_INFO_HERE>
+
+    - name: Erstellen der Domäne
+      microsoft.ad.domain:
+        create_dns_delegation: false
+        database_path: C:\Windows\NTDS
+        dns_domain_name: ausfall-V.internal
+        domain_mode: Win2012R2
+        forest_mode: Win2012R2
+        safe_mode_password: <INSERT_YOUR_OWN_INFO_HERE>
+        sysvol_path: C:\Windows\SYSVOL
+      register: creation_domain
+
+    - name: Neustart nach DC Promo
+      community.windows.win_reboot:
+        pre_reboot_delay: 15
+        post_reboot_delay: 15
+      when: creation_domain.reboot_required
+
+    - name: Setze Reverse DNS Lookup Zone
+      community.windows.win_shell: "Add-DnsServerPrimaryZone -NetworkID '<INSERT_YOUR_OWN_INFO_HERE>' -ReplicationScope Forest"
+      retries: 5
+      delay: 60
+      register: temp4
+      until: temp4 is succeeded
+
+    - name: Installiere DHCP-Server
+      win_feature:
+        name: DHCP
+        include_management_tools: yes
+
+    - name: DHCP Sicherheitsgruppen anlegen
+      win_command:
+        cmd: netsh dhcp add securitygroups
+
+    - name: DHCP Service neustarten
+      win_service:
+        name: dhcpserver
+        state: restarted
+
+    - name: Authorisieren des DHCP Servers
+      ansible.windows.win_powershell:
+        script: |
+           Add-DHCPServerInDC -DnsName verwaltung-dc.ausfall-V.internal -IPAddress <INSERT_YOUR_OWN_INFO_HERE>
+
+    - name: Servermanager informieren das DHCP richtig konfiguriert wurde
+      win_regedit:
+        path: HKLM:\SOFTWARE\Microsoft\ServerManager\Roles\12
+        name: ConfigurationState
+        data: 2
+        type: dword
+        state: present
+
+    - name: Neustart
+      win_reboot:
+        pre_reboot_delay: 5

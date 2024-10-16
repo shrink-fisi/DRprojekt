@@ -1,0 +1,18 @@
+---
+- name: Grundsetup DC
+  import_playbook: dcverwaltung_install.yaml
+
+- name: Grundsetup DFS
+  import_playbook: dfsverwaltung_install.yaml
+
+- name: Konfiguration DC
+  import_playbook: dcverwaltung_config.yaml
+  become: true
+  become_user: Administrator@ausfall-V.internal
+  become_method: runas
+
+- name: Konfiguration DFS
+  import_playbook: dfsverwaltung_config.yaml
+  become: true
+  become_user: Administrator@ausfall-V.internal
+  become_method: runas

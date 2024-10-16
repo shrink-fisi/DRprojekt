@@ -1,0 +1,41 @@
+---
+- name: Konfigurieren des DFS Namespaces durch Hochladen eines Skripts
+  hosts: schulungdfs
+  gather_facts: no
+  tasks:
+
+    - name: Hochladen create_dfs_namespace_schulung.ps1 zu SchulungDFS
+      win_copy:
+        src: /opt/scripts/templates/create_dfs_namespace_schulung.ps1
+        dest: C:\Temp\
+
+    - name: Hochladen import_printers_schulung.ps1 zu SchulungDFS
+      win_copy:
+        src: /opt/scripts/templates/import_printers_schulung.ps1
+        dest: C:\Temp\
+
+    - name: Hochladen PrinterExport Datei zu SchulungDFS
+      win_copy:
+        src: /opt/scripts/templates/drheuer.printerExport
+        dest: C:\Temp\
+
+    - name: Erstellen des DFS-Namespaces durch ein PS Skript
+      win_command: powershell.exe -ExecutionPolicy Bypass -File "C:\Temp\create_dfs_namespace_schulung.ps1"
+      become: yes
+      become_user: Administrator
+      become_method: runas
+
+    - name: Neues SMB Share für Printer erzeugen
+      win_share:
+        name: print$
+        path: C:\Windows\System32\spool\drivers
+        list: true
+        full: Administratoren
+        read: Jeder
+
+    - name: Importieren der Netzwerkdrucker durch ein PS Skript
+      win_command: powershell.exe -ExecutionPolicy Bypass -File "C:\Temp\import_printers_schulung.ps1"
+      become: yes
+      become_user: Administrator
+      become_method: runas
+

@@ -1,0 +1,62 @@
+---
+- name: Einrichten des DFS & Druckerservers für die Ausfalldomäne des Verwaltungsbereichs
+  hosts: verwaltungdfs
+  gather_facts: false
+  tasks:
+
+    - name: Firewall disablen um spätere Probleme zu vermeiden
+      win_firewall:
+        state: disabled
+        profiles:
+          - Domain
+          - Private
+          - Public
+
+    - name: Anpassung des Hostnamens
+      win_hostname:
+        name: "verwaltung-dfs"
+      register: temp1
+
+    - name: Setze DC als DNS Server
+      win_dns_client:
+        adaper_names: '*'
+        ipv4_addresses:
+          - '<INSERT_YOUR_OWN_INFO_HERE>'
+          - '8.8.8.8'
+
+    - name: Neustart vor Joinen der Domäne
+      win_reboot:
+        pre_reboot_delay: 5
+        post_reboot_delay: 10
+
+    - name: Joinen der Domäne
+      microsoft.ad.membership:
+        dns_domain_name: ausfall-V.internal
+        hostname: verwaltung-dfs
+        domain_admin_user: administrator@ausfall-V.internal
+        domain_admin_password: <INSERT_YOUR_OWN_INFO_HERE>
+        state: domain
+      register: domain_state
+
+    - name: Neustart nach Domänenbeitritt
+      win_reboot:
+        pre_reboot_delay: 5
+        post_reboot_delay: 10
+
+    - name: Installiere DFS Namespaces
+      win_feature:
+        name: FS-DFS-Namespace
+        state: present
+
+    - name: Installiere Druckerserver
+      win_feature:
+        name: Print-Server
+        state: present
+
+    - name: Installiere Verwaltungstools
+      win_feature:
+        name:
+          - RSAT-File-Services
+          - RSAT-DFS-Mgmt-Con
+          - RSAT-Print-Services
+        state: present
